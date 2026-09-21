@@ -146,6 +146,21 @@ function App() {
         method: 'POST',
         body: formData,
       });
+
+      if (!res.ok) {
+        const text = await res.text();
+        // If HTML page returned by Render (e.g. during deploy or timeout)
+        if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+          throw new Error(`Server is updating or restarting (${res.status}). Please wait 30 seconds and try again.`);
+        }
+        try {
+          const errJson = JSON.parse(text);
+          throw new Error(errJson.error || `HTTP ${res.status}`);
+        } catch (e) {
+          throw new Error(`Server returned status ${res.status}`);
+        }
+      }
+
       const data = await res.json();
       const elapsed = Date.now() - t0;
       setUploadLatency(elapsed);
