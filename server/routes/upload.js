@@ -79,71 +79,17 @@ router.post('/', upload.single('presentation'), async (req, res) => {
 
     // Convert to PDF for frontend rendering
     let pdfUrl = null;
-    let finalPdfPath = null;
     try {
       pdfUrl = await convertPptxToPdf(filePath, slidesOutputDir);
-      finalPdfPath = path.join(__dirname, '../..', pdfUrl);
     } catch (err) {
-      console.warn('PDF conversion failed:', err.message);
+      console.warn('PDF conversion warning:', err.message);
     }
 
-    let slides = [];
-    
-    // Try Gemini Native PDF Understanding if key exists
-    if (process.env.GEMINI_API_KEY && finalPdfPath && fs.existsSync(finalPdfPath)) {
-      try {
-        console.log('Using Gemini Native PDF Understanding...');
-        const { GoogleGenAI } = require('@google/genai');
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        
-        // Read PDF as base64 for inline data (works reliably)
-        const pdfBuffer = fs.readFileSync(finalPdfPath);
-        const pdfBase64 = pdfBuffer.toString('base64');
-        
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash',
-            contents: [
-                {
-                    role: 'user',
-                    parts: [
-                        {
-                            inlineData: {
-                                mimeType: 'application/pdf',
-                                data: pdfBase64
-                            }
-                        },
-                        { text: 'Analyze this presentation. For EACH page, extract the text and describe visual elements. Return a strict JSON array where each element has: "slideNumber" (integer) and "text" (string with text + visual description).' }
-                    ]
-                }
-            ],
-            config: {
-                responseMimeType: 'application/json'
-            }
-        });
-        
-        const jsonResult = JSON.parse(response.text());
-        
-        slides = jsonResult.map((s, i) => ({
-            slideNumber: s.slideNumber || i + 1,
-            text: s.text,
-            pdfUrl
-        }));
-        
-        console.log('Gemini Native PDF Extraction Successful. Slides:', slides.length);
-      } catch (err) {
-        console.error('Gemini Native PDF failed, falling back to pdf-parse:', err.message);
-      }
-    }
-
-    // Fallback to pdf-parse (native text extraction)
-    if (slides.length === 0) {
-
-      slides = textSlides.map(ts => ({
-        slideNumber: ts.slideNumber,
-        text: ts.text,
-        pdfUrl
-      }));
-    }
+    const slides = textSlides.map(ts => ({
+      slideNumber: ts.slideNumber,
+      text: ts.text,
+      pdfUrl
+    }));
 
     res.json({
       slides,
