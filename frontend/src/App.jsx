@@ -17,6 +17,8 @@ function App() {
   const [question, setQuestion] = useState('');
   const [isAnswering, setIsAnswering] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
+  const [latency, setLatency] = useState(null);
+  const [ttsLatency, setTtsLatency] = useState(null);
 
   const fileInputRef = useRef(null);
   const audioRef = useRef(null);
@@ -31,6 +33,8 @@ function App() {
     setCurrentIndex(0);
     setTranscript('');
     setQaMessages([]);
+    setLatency(null);
+    setTtsLatency(null);
     stopNarration();
 
     const formData = new FormData();
@@ -75,6 +79,9 @@ function App() {
     abortControllerRef.current = abortController;
 
     try {
+      const startTime = Date.now();
+      let firstTokenTime = null;
+      
       // 1. Stream the text
       const response = await fetch(`/api/narrate/stream`, {
         method: 'POST',
@@ -96,6 +103,11 @@ function App() {
         const { done, value } = await reader.read();
         if (done) break;
         
+        if (!firstTokenTime) {
+          firstTokenTime = Date.now() - startTime;
+          setTtsLatency((prev) => (prev ? prev : `First Token: ${firstTokenTime}ms`));
+        }
+
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split('\n\n');
         buffer = parts.pop(); // Keep the incomplete part
@@ -116,6 +128,7 @@ function App() {
       }
 
       // 2. Fetch TTS Audio
+      const ttsStartTime = Date.now();
       const ttsRes = await fetch('/api/narrate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -128,13 +141,14 @@ function App() {
       });
       
       const ttsData = await ttsRes.json();
+      setTtsLatency(`API: ${firstTokenTime}ms | TTS: ${Date.now() - ttsStartTime}ms`);
+
       if (ttsData.audioUrl) {
         setAudioUrl(ttsData.audioUrl);
         if (audioRef.current) {
           // Play will happen automatically in useEffect when audioUrl changes
         }
       }
-
     } catch (err) {
       if (err.name !== 'AbortError') {
         console.error('Narration error:', err);
@@ -407,6 +421,12 @@ function App() {
                 Next <ChevronRight size={16} />
               </button>
             </div>
+            
+            {ttsLatency && (
+              <div className="text-[10px] text-text-secondary bg-black/40 px-2 py-1 rounded font-mono">
+                {ttsLatency}
+              </div>
+            )}
             
             <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer hover:text-white transition-colors">
               <input 
