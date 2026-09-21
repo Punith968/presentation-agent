@@ -132,6 +132,8 @@ async function* streamAnswer(question, currentSlide, allSlides) {
     const token = chunk.choices[0]?.delta?.content;
     if (token) yield token;
   }
+}
+
 async function analyzeImage(imagePath) {
   if (!fs.existsSync(imagePath)) {
     console.warn(`Image path not found for analysis: ${imagePath}`);
