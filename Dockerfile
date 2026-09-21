@@ -3,9 +3,12 @@ FROM node:20-bookworm
 # Prevent interactive prompts during apt-get
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install libreoffice for PPTX to PDF conversion (without unnecessary packages)
+# Install libreoffice for PPTX to PDF conversion and python3/edge-tts for realistic neural voice
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice \
+    python3 \
+    python3-pip \
+    && pip install --no-cache-dir --break-system-packages edge-tts \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
