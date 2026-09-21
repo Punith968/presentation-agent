@@ -101,7 +101,12 @@ router.post('/', upload.single('presentation'), async (req, res) => {
         const response = await ai.models.generateContent({
             model: 'gemini-1.5-flash',
             contents: [
-                uploadResult,
+                {
+                    fileData: {
+                        mimeType: uploadResult.mimeType,
+                        fileUri: uploadResult.uri
+                    }
+                },
                 { text: 'Analyze this presentation. For EACH page in the document, extract the text and describe any visual elements/diagrams/charts. Return a strict JSON array where each element has: "slideNumber" (integer) and "text" (string containing text + visual description).' }
             ],
             config: {
@@ -126,14 +131,6 @@ router.post('/', upload.single('presentation'), async (req, res) => {
 
     // Fallback to pdf-parse (native text extraction)
     if (slides.length === 0) {
-      let textSlides = [];
-      if (fileExt === 'pdf') {
-        textSlides = await parseSlides(filePath, 'pdf');
-      } else if (fileExt === 'pptx') {
-        textSlides = await parseSlides(filePath, 'pptx');
-      } else {
-        return res.status(400).json({ error: 'Upload PDF or PPTX only.' });
-      }
 
       slides = textSlides.map(ts => ({
         slideNumber: ts.slideNumber,
