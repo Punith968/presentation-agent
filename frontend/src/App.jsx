@@ -239,7 +239,7 @@ function App() {
   };
 
   return (
-    <div className="h-screen w-screen flex flex-col p-4">
+    <div className="h-screen w-full min-h-[768px] min-w-[1024px] overflow-auto flex flex-col p-4">
       {/* Header */}
       <header className="flex items-center gap-3 pb-3 border-b border-border-subtle mb-4">
         <span className="text-2xl drop-shadow-[0_0_10px_var(--color-accent)]">🎓</span>
@@ -294,11 +294,11 @@ function App() {
                       ${currentIndex === idx ? 'border-accent ring-2 ring-accent/30 bg-accent/10' : 'border-border-subtle bg-bg-card hover:border-accent'}
                     `}
                   >
-                    <div className="h-24 bg-black flex items-center justify-center border-b border-border-subtle relative overflow-hidden group">
-                      <div className="scale-[0.25] origin-top mt-2 pointer-events-none">
-                        <Page pageNumber={slide.slideNumber} width={400} renderTextLayer={false} renderAnnotationLayer={false} />
+                    <div className="h-28 bg-black flex items-center justify-center border-b border-border-subtle relative overflow-hidden group">
+                      <div className="pointer-events-none flex items-center justify-center w-full h-full">
+                        <Page pageNumber={slide.slideNumber} width={200} renderTextLayer={false} renderAnnotationLayer={false} className="shadow-sm" />
                       </div>
-                      <div className="absolute top-1 left-1 bg-black/70 text-[9px] px-1 rounded text-white font-mono">{slide.slideNumber}</div>
+                      <div className="absolute top-1 left-1 bg-black/80 text-[10px] px-1.5 py-0.5 rounded text-white font-mono z-10">{slide.slideNumber}</div>
                     </div>
                     <div className="p-2">
                       <div className="font-mono text-[10px] font-bold text-accent-hover uppercase">Slide {slide.slideNumber}</div>
