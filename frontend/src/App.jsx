@@ -1,34 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Play, Square, ChevronLeft, ChevronRight, Maximize, Mic } from 'lucide-react';
+import { Upload, Play, Square, ChevronLeft, ChevronRight, Maximize, Mic, Clock, Zap } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
-
-function ThumbnailPage({ slide }) {
-  const [inView, setInView] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) setInView(true);
-      },
-      { rootMargin: '300px' }
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div ref={ref} className="pointer-events-none flex items-center justify-center w-full h-full min-h-[50px]">
-      {inView ? (
-        <Page pageNumber={slide.slideNumber} width={200} renderTextLayer={false} renderAnnotationLayer={false} className="shadow-sm" />
-      ) : null}
-    </div>
-  );
-}
 
 function App() {
   const [slides, setSlides] = useState([]);
@@ -41,12 +17,18 @@ function App() {
   const [question, setQuestion] = useState('');
   const [isAnswering, setIsAnswering] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
-  const [latency, setLatency] = useState(null);
+  const [uploadLatency, setUploadLatency] = useState(null);
+  const [streamLatency, setStreamLatency] = useState(null);
   const [ttsLatency, setTtsLatency] = useState(null);
+  const [pdfNumPages, setPdfNumPages] = useState(null);
 
   const fileInputRef = useRef(null);
   const audioRef = useRef(null);
   const abortControllerRef = useRef(null);
+  const mainViewRef = useRef(null);
+
+  // Get current pdfUrl
+  const currentPdfUrl = slides.length > 0 ? slides[0].pdfUrl : null;
 
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -57,19 +39,25 @@ function App() {
     setCurrentIndex(0);
     setTranscript('');
     setQaMessages([]);
-    setLatency(null);
+    setUploadLatency(null);
+    setStreamLatency(null);
     setTtsLatency(null);
+    setPdfNumPages(null);
     stopNarration();
 
     const formData = new FormData();
     formData.append('presentation', file);
 
     try {
+      const t0 = Date.now();
       const res = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
       });
       const data = await res.json();
+      const elapsed = Date.now() - t0;
+      setUploadLatency(elapsed);
+
       if (data.error) throw new Error(data.error);
       setSlides(data.slides || []);
     } catch (err) {
@@ -97,16 +85,17 @@ function App() {
     setIsPlaying(true);
     setCurrentIndex(index);
     setTranscript('');
+    setStreamLatency(null);
+    setTtsLatency(null);
     
     const slide = slides[index];
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
     try {
-      const startTime = Date.now();
-      let firstTokenTime = null;
-      
-      // 1. Stream the text
+      const t0 = Date.now();
+
+      // 1. Stream the narration text
       const response = await fetch(`/api/narrate/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -122,19 +111,19 @@ function App() {
       const decoder = new TextDecoder();
       let fullText = '';
       let buffer = '';
+      let firstTokenMs = null;
       
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
-        if (!firstTokenTime) {
-          firstTokenTime = Date.now() - startTime;
-          setTtsLatency((prev) => (prev ? prev : `First Token: ${firstTokenTime}ms`));
-        }
 
+        if (firstTokenMs === null) {
+          firstTokenMs = Date.now() - t0;
+        }
+        
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split('\n\n');
-        buffer = parts.pop(); // Keep the incomplete part
+        buffer = parts.pop();
         
         for (const part of parts) {
           if (part.startsWith('data: ')) {
@@ -145,14 +134,16 @@ function App() {
                 setTranscript(fullText);
               }
             } catch (e) {
-              // Parse error on incomplete chunk, ignore
+              // ignore
             }
           }
         }
       }
 
+      setStreamLatency(firstTokenMs);
+
       // 2. Fetch TTS Audio
-      const ttsStartTime = Date.now();
+      const ttsT0 = Date.now();
       const ttsRes = await fetch('/api/narrate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -165,13 +156,10 @@ function App() {
       });
       
       const ttsData = await ttsRes.json();
-      setTtsLatency(`API: ${firstTokenTime}ms | TTS: ${Date.now() - ttsStartTime}ms`);
+      setTtsLatency(Date.now() - ttsT0);
 
       if (ttsData.audioUrl) {
         setAudioUrl(ttsData.audioUrl);
-        if (audioRef.current) {
-          // Play will happen automatically in useEffect when audioUrl changes
-        }
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
@@ -206,7 +194,6 @@ function App() {
 
     const currentSlide = slides[currentIndex];
     
-    // Pause narration while answering
     if (isPlaying && audioRef.current) {
       audioRef.current.pause();
     }
@@ -260,7 +247,7 @@ function App() {
                 });
               }
             } catch (e) {
-              // ignore parse errors
+              // ignore
             }
           }
         }
@@ -269,7 +256,6 @@ function App() {
       console.error('QA Error:', err);
     } finally {
       setIsAnswering(false);
-      // Resume narration if it was playing
       if (isPlaying && audioRef.current) {
         audioRef.current.play().catch(() => {});
       }
@@ -277,50 +263,72 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen w-full overflow-y-auto overflow-x-hidden flex flex-col p-4 bg-bg-app">
+    <div style={{ minHeight: '100vh', minWidth: '320px', padding: '16px', boxSizing: 'border-box' }}>
       {/* Header */}
-      <header className="flex items-center gap-3 pb-3 border-b border-border-subtle mb-4">
-        <span className="text-2xl drop-shadow-[0_0_10px_var(--color-accent)]">🎓</span>
-        <h1 className="font-mono text-xl font-bold bg-gradient-to-r from-white to-accent-hover bg-clip-text text-transparent">
+      <header style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '12px', borderBottom: '1px solid rgba(99,102,241,0.15)', marginBottom: '16px' }}>
+        <span style={{ fontSize: '24px', filter: 'drop-shadow(0 0 10px rgba(99,102,241,0.4))' }}>🎓</span>
+        <h1 className="font-mono" style={{ fontSize: '20px', fontWeight: 700, background: 'linear-gradient(to right, #f8fafc, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', margin: 0 }}>
           AI Classroom Presenter
         </h1>
+        {/* Latency badges */}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {uploadLatency && (
+            <span className="font-mono" style={{ fontSize: '11px', background: 'rgba(0,0,0,0.4)', color: '#94a3b8', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Zap size={10} /> Upload: {(uploadLatency/1000).toFixed(1)}s
+            </span>
+          )}
+          {streamLatency && (
+            <span className="font-mono" style={{ fontSize: '11px', background: 'rgba(0,0,0,0.4)', color: '#10b981', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Clock size={10} /> First Token: {streamLatency}ms
+            </span>
+          )}
+          {ttsLatency && (
+            <span className="font-mono" style={{ fontSize: '11px', background: 'rgba(0,0,0,0.4)', color: '#f59e0b', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Clock size={10} /> TTS: {(ttsLatency/1000).toFixed(1)}s
+            </span>
+          )}
+        </div>
       </header>
 
-      {/* Main Grid */}
-      <main className="flex-1 min-h-0 flex flex-col lg:flex-row gap-4">
+      {/* Three-column layout */}
+      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr 300px', gap: '16px', minHeight: 'calc(100vh - 80px)' }}>
         
-        {/* Left Panel */}
-        <section className="w-full lg:w-[240px] flex-shrink-0 bg-bg-panel backdrop-blur-xl border border-border-subtle rounded-2xl flex flex-col overflow-hidden max-h-[300px] lg:max-h-none">
-          <div className="p-3 border-b border-border-subtle bg-white/5 uppercase text-xs font-mono font-bold text-accent-hover tracking-wider flex justify-between items-center">
-            <span>Slide Deck</span>
-            {latency && <span className="text-[10px] text-text-secondary bg-black/40 px-2 py-0.5 rounded">⚡ {latency}ms</span>}
+        {/* ═══ LEFT PANEL: Slide Deck ═══ */}
+        <div style={{ background: 'rgba(15,18,28,0.75)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden', maxHeight: 'calc(100vh - 80px)' }}>
+          <div className="font-mono" style={{ padding: '12px', borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(255,255,255,0.03)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#818cf8' }}>
+            Slide Deck ({slides.length})
           </div>
           
+          {/* Upload area */}
           <div 
             onClick={() => fileInputRef.current?.click()}
-            className="m-4 p-6 border-2 border-dashed border-border-subtle rounded-xl text-center cursor-pointer hover:border-accent hover:bg-accent/10 transition-colors shrink-0"
+            style={{ margin: '12px', padding: '20px 12px', border: '2px dashed rgba(99,102,241,0.2)', borderRadius: '12px', textAlign: 'center', cursor: 'pointer', flexShrink: 0 }}
           >
-            <Upload className="mx-auto text-text-secondary mb-2" />
-            <p className="text-xs text-text-secondary mb-3">Upload PDF or PPTX</p>
-            <button className="bg-accent hover:bg-accent-hover text-white text-xs px-4 py-1.5 rounded-md font-medium transition-colors">
-              Browse
-            </button>
+            <Upload style={{ margin: '0 auto 8px', color: '#94a3b8' }} size={20} />
+            <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0 0 8px' }}>Upload PDF or PPTX</p>
+            <span style={{ background: '#6366f1', color: '#fff', fontSize: '11px', padding: '4px 16px', borderRadius: '6px', fontWeight: 500 }}>Browse</span>
             <input 
               type="file" 
               ref={fileInputRef} 
-              className="hidden" 
+              style={{ display: 'none' }}
               accept=".pdf,.pptx" 
               onChange={handleUpload}
             />
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 pt-0 flex flex-col gap-3">
+          {/* Thumbnail list */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {isUploading && (
-              <div className="text-center text-sm text-text-secondary animate-pulse">Processing presentation...</div>
+              <div style={{ textAlign: 'center', fontSize: '13px', color: '#94a3b8', padding: '16px 0', animation: 'pulse 1.5s ease-in-out infinite' }}>Processing...</div>
             )}
             
-            {slides.length > 0 && slides[0].pdfUrl ? (
-              <Document file={slides[0].pdfUrl}>
+            {currentPdfUrl && slides.length > 0 && (
+              <Document 
+                file={currentPdfUrl} 
+                onLoadSuccess={({ numPages }) => setPdfNumPages(numPages)}
+                loading={<div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '12px', padding: '12px' }}>Loading PDF...</div>}
+                error={<div style={{ textAlign: 'center', color: '#ef4444', fontSize: '12px', padding: '12px' }}>PDF load error</div>}
+              >
                 {slides.map((slide, idx) => (
                   <div 
                     key={idx} 
@@ -328,73 +336,96 @@ function App() {
                       setCurrentIndex(idx);
                       if (isPlaying) startNarration(idx);
                     }}
-                    className={`
-                      rounded-lg overflow-hidden border cursor-pointer transition-all mb-3
-                      ${currentIndex === idx ? 'border-accent ring-2 ring-accent/30 bg-accent/10' : 'border-border-subtle bg-bg-card hover:border-accent'}
-                    `}
+                    style={{
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      border: currentIndex === idx ? '2px solid #6366f1' : '1px solid rgba(99,102,241,0.15)',
+                      cursor: 'pointer',
+                      background: currentIndex === idx ? 'rgba(99,102,241,0.1)' : 'rgba(22,26,38,0.6)',
+                      boxShadow: currentIndex === idx ? '0 0 12px rgba(99,102,241,0.2)' : 'none',
+                      transition: 'all 0.2s',
+                    }}
                   >
-                    <div className="h-28 bg-black flex items-center justify-center border-b border-border-subtle relative overflow-hidden group">
-                      <ThumbnailPage slide={slide} />
-                      <div className="absolute top-1 left-1 bg-black/80 text-[10px] px-1.5 py-0.5 rounded text-white font-mono z-10">{slide.slideNumber}</div>
+                    <div style={{ height: '110px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
+                      <Page 
+                        pageNumber={slide.slideNumber} 
+                        width={190} 
+                        renderTextLayer={false} 
+                        renderAnnotationLayer={false} 
+                      />
+                      <div className="font-mono" style={{ position: 'absolute', top: '4px', left: '4px', background: 'rgba(0,0,0,0.8)', color: '#fff', fontSize: '9px', padding: '1px 5px', borderRadius: '3px' }}>
+                        {slide.slideNumber}
+                      </div>
                     </div>
-                    <div className="p-2">
-                      <div className="font-mono text-[10px] font-bold text-accent-hover uppercase">Slide {slide.slideNumber}</div>
+                    <div style={{ padding: '6px 8px' }}>
+                      <div className="font-mono" style={{ fontSize: '10px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase' }}>Slide {slide.slideNumber}</div>
                     </div>
                   </div>
                 ))}
               </Document>
-            ) : (
-              slides.map((slide, idx) => (
-                <div 
-                  key={idx} 
-                  onClick={() => {
-                    setCurrentIndex(idx);
-                    if (isPlaying) startNarration(idx);
-                  }}
-                  className={`
-                    rounded-lg overflow-hidden border cursor-pointer transition-all mb-3
-                    ${currentIndex === idx ? 'border-accent ring-2 ring-accent/30 bg-accent/10' : 'border-border-subtle bg-bg-card hover:border-accent'}
-                  `}
-                >
-                  <div className="h-24 bg-black flex items-center justify-center border-b border-border-subtle relative overflow-hidden group">
-                    <div className="font-mono text-2xl font-bold text-white shadow-sm">{slide.slideNumber}</div>
-                  </div>
-                  <div className="p-2">
-                    <div className="font-mono text-[10px] font-bold text-accent-hover uppercase">Slide {slide.slideNumber}</div>
-                  </div>
-                </div>
-              ))
             )}
-          </div>
-        </section>
 
-        {/* Center Panel */}
-        <section className="flex-1 flex flex-col min-h-[400px] lg:min-h-0 bg-bg-panel backdrop-blur-xl border border-border-subtle rounded-2xl p-4">
-          <div className="flex-1 min-h-0 flex flex-col bg-bg-blackboard border border-border-subtle rounded-xl relative overflow-hidden shadow-[inset_0_0_20px_rgba(0,0,0,0.6)]">
-            <div className="flex justify-between items-center p-2.5 bg-black/40 border-b border-border-subtle z-10">
-              <div className="font-mono text-xs text-text-secondary">
-                Slide {slides.length > 0 ? currentIndex + 1 : 0} of {slides.length}
+            {/* Fallback: no PDF available */}
+            {!currentPdfUrl && slides.length > 0 && slides.map((slide, idx) => (
+              <div 
+                key={idx} 
+                onClick={() => {
+                  setCurrentIndex(idx);
+                  if (isPlaying) startNarration(idx);
+                }}
+                style={{
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  border: currentIndex === idx ? '2px solid #6366f1' : '1px solid rgba(99,102,241,0.15)',
+                  cursor: 'pointer',
+                  background: currentIndex === idx ? 'rgba(99,102,241,0.1)' : 'rgba(22,26,38,0.6)',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <div style={{ height: '80px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span className="font-mono" style={{ fontSize: '24px', fontWeight: 700, color: '#fff' }}>{slide.slideNumber}</span>
+                </div>
+                <div style={{ padding: '6px 8px' }}>
+                  <div className="font-mono" style={{ fontSize: '10px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase' }}>Slide {slide.slideNumber}</div>
+                </div>
               </div>
-              <button className="text-text-secondary hover:text-white p-1 hover:bg-white/10 rounded transition-colors">
-                <Maximize size={16} />
+            ))}
+          </div>
+        </div>
+
+        {/* ═══ CENTER PANEL: Main Slide View ═══ */}
+        <div style={{ background: 'rgba(15,18,28,0.75)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Slide viewer */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#111520', borderRadius: '12px', margin: '12px', overflow: 'hidden', boxShadow: 'inset 0 0 20px rgba(0,0,0,0.6)', border: '1px solid rgba(99,102,241,0.15)' }}>
+            {/* Top bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(0,0,0,0.4)', borderBottom: '1px solid rgba(99,102,241,0.15)' }}>
+              <span className="font-mono" style={{ fontSize: '12px', color: '#94a3b8' }}>
+                Slide {slides.length > 0 ? currentIndex + 1 : 0} of {slides.length}
+              </span>
+              <button style={{ color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                <Maximize size={14} />
               </button>
             </div>
             
-            <div className="flex-1 flex items-center justify-center p-4 relative bg-[radial-gradient(circle,#1a2233_0%,#0d121c_100%)] overflow-hidden">
+            {/* Slide content */}
+            <div ref={mainViewRef} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', background: 'radial-gradient(circle, #1a2233 0%, #0d121c 100%)', overflow: 'auto' }}>
               {slides.length === 0 ? (
-                <p className="text-text-secondary font-mono text-sm">Upload a presentation to begin</p>
+                <p className="font-mono" style={{ color: '#94a3b8', fontSize: '14px' }}>Upload a presentation to begin</p>
               ) : (
-                slides[currentIndex]?.pdfUrl ? (
-                  <Document file={slides[currentIndex].pdfUrl} loading="Loading slide...">
+                currentPdfUrl ? (
+                  <Document 
+                    file={currentPdfUrl} 
+                    loading={<p style={{ color: '#94a3b8' }}>Loading...</p>}
+                  >
                     <Page 
-                      pageNumber={slides[currentIndex].slideNumber} 
+                      pageNumber={slides[currentIndex]?.slideNumber || 1} 
                       renderTextLayer={false}
                       renderAnnotationLayer={false}
-                      className="shadow-[0_10px_30px_rgba(0,0,0,0.5)]"
+                      width={Math.min(typeof window !== 'undefined' ? window.innerWidth * 0.4 : 600, 700)}
                     />
                   </Document>
                 ) : (
-                  <div className="w-full h-full p-8 overflow-y-auto text-text-blackboard text-lg leading-relaxed whitespace-pre-wrap drop-shadow-md">
+                  <div style={{ width: '100%', height: '100%', padding: '32px', overflowY: 'auto', color: '#e2e8f0', fontSize: '16px', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
                     {slides[currentIndex]?.text.replace(/--- VISUAL DESCRIPTION ---[\s\S]*/, '')}
                   </div>
                 )
@@ -402,33 +433,37 @@ function App() {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-col items-center gap-3">
-            <div className="flex items-center gap-3">
+          {/* Controls */}
+          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button 
                 disabled={currentIndex === 0 || slides.length === 0}
                 onClick={() => {
                   setCurrentIndex(prev => prev - 1);
                   if (isPlaying) startNarration(currentIndex - 1);
                 }}
-                className="bg-bg-card border border-border-subtle hover:border-accent hover:bg-accent/10 disabled:opacity-40 disabled:hover:border-border-subtle text-white font-mono text-sm font-bold px-4 py-2 rounded-lg transition-all flex items-center gap-1"
+                className="font-mono"
+                style={{ background: 'rgba(22,26,38,0.6)', border: '1px solid rgba(99,102,241,0.15)', color: '#fff', fontSize: '13px', fontWeight: 700, padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', opacity: (currentIndex === 0 || slides.length === 0) ? 0.4 : 1 }}
               >
-                <ChevronLeft size={16} /> Prev
+                <ChevronLeft size={14} /> Prev
               </button>
               
               {!isPlaying ? (
                 <button 
                   disabled={slides.length === 0}
                   onClick={() => startNarration(currentIndex)}
-                  className="bg-accent border border-accent hover:bg-accent-hover hover:shadow-[0_0_15px_var(--color-accent-glow)] disabled:opacity-40 text-white font-mono text-sm font-bold px-5 py-2 rounded-lg transition-all flex items-center gap-2"
+                  className="font-mono"
+                  style={{ background: '#6366f1', border: '1px solid #6366f1', color: '#fff', fontSize: '13px', fontWeight: 700, padding: '8px 18px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', opacity: slides.length === 0 ? 0.4 : 1 }}
                 >
-                  <Play size={16} /> Play Lesson
+                  <Play size={14} /> Play Lesson
                 </button>
               ) : (
                 <button 
                   onClick={stopNarration}
-                  className="bg-bg-card border border-border-subtle hover:border-danger hover:text-danger disabled:opacity-40 text-white font-mono text-sm font-bold px-5 py-2 rounded-lg transition-all flex items-center gap-2"
+                  className="font-mono"
+                  style={{ background: 'rgba(22,26,38,0.6)', border: '1px solid rgba(99,102,241,0.15)', color: '#fff', fontSize: '13px', fontWeight: 700, padding: '8px 18px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
-                  <Square size={16} /> Stop
+                  <Square size={14} /> Stop
                 </button>
               )}
 
@@ -438,85 +473,95 @@ function App() {
                   setCurrentIndex(prev => prev + 1);
                   if (isPlaying) startNarration(currentIndex + 1);
                 }}
-                className="bg-bg-card border border-border-subtle hover:border-accent hover:bg-accent/10 disabled:opacity-40 disabled:hover:border-border-subtle text-white font-mono text-sm font-bold px-4 py-2 rounded-lg transition-all flex items-center gap-1"
+                className="font-mono"
+                style={{ background: 'rgba(22,26,38,0.6)', border: '1px solid rgba(99,102,241,0.15)', color: '#fff', fontSize: '13px', fontWeight: 700, padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', opacity: (currentIndex === slides.length - 1 || slides.length === 0) ? 0.4 : 1 }}
               >
-                Next <ChevronRight size={16} />
+                Next <ChevronRight size={14} />
               </button>
             </div>
             
-            {ttsLatency && (
-              <div className="text-[10px] text-text-secondary bg-black/40 px-2 py-1 rounded font-mono">
-                {ttsLatency}
-              </div>
-            )}
-            
-            <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer hover:text-white transition-colors">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#94a3b8', cursor: 'pointer' }}>
               <input 
                 type="checkbox" 
                 checked={autoAdvance} 
                 onChange={(e) => setAutoAdvance(e.target.checked)}
-                className="accent-accent"
+                style={{ accentColor: '#6366f1' }}
               />
               Auto-advance to next slide
             </label>
           </div>
-        </section>
+        </div>
 
-        {/* Right Panel */}
-        <section className="w-full lg:w-[320px] flex-shrink-0 flex flex-col gap-4 min-h-[500px] lg:min-h-0 lg:h-full">
+        {/* ═══ RIGHT PANEL: Transcription + Q&A ═══ */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: 'calc(100vh - 80px)' }}>
+          
           {/* Teleprompter */}
-          <div className="flex-1 bg-bg-panel backdrop-blur-xl border border-border-subtle rounded-2xl flex flex-col overflow-hidden max-h-[300px]">
-            <div className="p-3 border-b border-border-subtle bg-white/5 uppercase text-xs font-mono font-bold text-accent-hover tracking-wider">
+          <div style={{ flex: 1, background: 'rgba(15,18,28,0.75)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div className="font-mono" style={{ padding: '12px', borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(255,255,255,0.03)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#818cf8' }}>
               Lesson Transcription
             </div>
-            <div className="flex-1 overflow-y-auto p-4 bg-black/15">
-              <div className="font-mono text-sm leading-relaxed text-emerald-400 whitespace-pre-wrap drop-shadow-[0_0_1px_rgba(16,185,129,0.4)]">
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px', background: 'rgba(0,0,0,0.1)' }}>
+              <div className="font-mono" style={{ fontSize: '13px', lineHeight: 1.6, color: '#10b981', whiteSpace: 'pre-wrap', textShadow: '0 0 1px rgba(16,185,129,0.4)' }}>
                 {transcript || (isPlaying ? "Thinking..." : "Start the narration to see the live teacher script...")}
               </div>
             </div>
           </div>
 
           {/* Q&A */}
-          <div className="flex-[1.5] bg-bg-panel backdrop-blur-xl border border-border-subtle rounded-2xl flex flex-col overflow-hidden min-h-0">
-            <div className="p-3 border-b border-border-subtle bg-white/5 uppercase text-xs font-mono font-bold text-accent-hover tracking-wider">
+          <div style={{ flex: 1.5, background: 'rgba(15,18,28,0.75)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div className="font-mono" style={{ padding: '12px', borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(255,255,255,0.03)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#818cf8' }}>
               Classroom Q&A
             </div>
             
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {qaMessages.length === 0 ? (
-                <div className="text-center text-xs text-text-secondary py-8">
+                <div style={{ textAlign: 'center', fontSize: '12px', color: '#94a3b8', padding: '32px 0' }}>
                   Ask your AI teacher questions about the presentation.
                 </div>
               ) : (
                 qaMessages.map((msg, i) => (
-                  <div key={i} className={`p-3 rounded-xl text-sm leading-relaxed max-w-[90%] shadow-md ${
-                    msg.role === 'user' 
-                      ? 'bg-bg-card self-end border-r-4 border-accent' 
-                      : 'bg-accent/10 self-start border-l-4 border-accent-hover'
-                  }`}>
-                    {msg.role === 'user' && <div className="font-mono text-[10px] text-accent-hover mb-1">YOU</div>}
-                    <div className="text-white">{msg.content || (isAnswering && i === qaMessages.length - 1 ? 'Thinking...' : '')}</div>
+                  <div key={i} style={{
+                    padding: '10px 12px',
+                    borderRadius: '12px',
+                    fontSize: '13px',
+                    lineHeight: 1.5,
+                    maxWidth: '90%',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                    ...(msg.role === 'user' 
+                      ? { background: 'rgba(22,26,38,0.6)', alignSelf: 'flex-end', borderRight: '3px solid #6366f1' }
+                      : { background: 'rgba(99,102,241,0.08)', alignSelf: 'flex-start', borderLeft: '3px solid #818cf8' }
+                    )
+                  }}>
+                    {msg.role === 'user' && <div className="font-mono" style={{ fontSize: '10px', color: '#818cf8', marginBottom: '4px' }}>YOU</div>}
+                    <div style={{ color: '#f8fafc' }}>{msg.content || (isAnswering && i === qaMessages.length - 1 ? 'Thinking...' : '')}</div>
                     
                     {msg.confidence && (
-                      <div className={`mt-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase
-                        ${msg.confidence === 'high' ? 'bg-emerald-500/15 text-emerald-500' : 
-                          msg.confidence === 'medium' ? 'bg-amber-500/15 text-amber-500' : 
-                          'bg-red-500/15 text-red-500'}`}
-                      >
+                      <div className="font-mono" style={{
+                        marginTop: '8px',
+                        display: 'inline-flex',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        ...(msg.confidence === 'high' ? { background: 'rgba(16,185,129,0.15)', color: '#10b981' } :
+                            msg.confidence === 'medium' ? { background: 'rgba(245,158,11,0.15)', color: '#f59e0b' } :
+                            { background: 'rgba(239,68,68,0.15)', color: '#ef4444' })
+                      }}>
                         {msg.confidence} CONFIDENCE
                       </div>
                     )}
                     {msg.disclaimer && (
-                      <div className="mt-1.5 text-[11px] text-amber-500 italic">{msg.disclaimer}</div>
+                      <div style={{ marginTop: '6px', fontSize: '11px', color: '#f59e0b', fontStyle: 'italic' }}>{msg.disclaimer}</div>
                     )}
                   </div>
                 ))
               )}
             </div>
 
-            <div className="p-3 border-t border-border-subtle bg-black/10 flex items-center gap-2">
-              <button className="w-10 h-10 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center flex-shrink-0 hover:border-accent hover:text-accent-hover transition-colors shadow-sm text-text-primary">
-                <Mic size={18} />
+            <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(99,102,241,0.15)', background: 'rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(22,26,38,0.6)', border: '1px solid rgba(99,102,241,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#94a3b8', flexShrink: 0 }}>
+                <Mic size={16} />
               </button>
               <input 
                 type="text" 
@@ -524,27 +569,23 @@ function App() {
                 onChange={e => setQuestion(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleAskQuestion()}
                 placeholder="Ask a question..."
-                className="flex-1 bg-black/20 text-sm text-white border border-border-subtle rounded-lg px-3 py-2 outline-none focus:border-border-focus focus:bg-black/30 transition-colors"
+                style={{ flex: 1, background: 'rgba(0,0,0,0.2)', fontSize: '13px', color: '#fff', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '8px', padding: '8px 12px', outline: 'none' }}
                 disabled={isAnswering}
               />
               <button 
                 onClick={handleAskQuestion}
                 disabled={!question.trim() || isAnswering}
-                className="bg-accent hover:bg-accent-hover text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                style={{ background: '#6366f1', color: '#fff', fontSize: '13px', fontWeight: 600, padding: '8px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', opacity: (!question.trim() || isAnswering) ? 0.5 : 1 }}
               >
                 Ask
               </button>
             </div>
           </div>
-        </section>
-      </main>
+        </div>
+      </div>
 
-      {/* Hidden audio element */}
-      <audio 
-        ref={audioRef} 
-        onEnded={handleAudioEnded}
-        className="hidden" 
-      />
+      {/* Hidden audio */}
+      <audio ref={audioRef} onEnded={handleAudioEnded} style={{ display: 'none' }} />
     </div>
   );
 }
