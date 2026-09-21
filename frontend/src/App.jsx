@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Play, Square, ChevronLeft, ChevronRight, Maximize, Minimize, Mic, Clock, Zap } from 'lucide-react';
+import { Upload, Play, Square, ChevronLeft, ChevronRight, Maximize, Minimize, Mic, Clock, Zap, Volume2 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -22,6 +22,7 @@ function App() {
   const [ttsLatency, setTtsLatency] = useState(null);
   const [pdfNumPages, setPdfNumPages] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [audioStatus, setAudioStatus] = useState('idle');
 
   // Dynamic slide fitting
   const [containerDim, setContainerDim] = useState({ width: 600, height: 400 });
@@ -176,6 +177,7 @@ function App() {
 
   const stopNarration = () => {
     setIsPlaying(false);
+    setAudioStatus('idle');
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -196,11 +198,18 @@ function App() {
       if (!clean) return;
       const utterance = new SpeechSynthesisUtterance(clean);
       utterance.rate = 1.0;
+      utterance.pitch = 1.0;
       const voices = window.speechSynthesis.getVoices();
-      const voice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Microsoft') || v.default)) || voices.find(v => v.lang.startsWith('en'));
+      const voice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Microsoft') || v.default)) || voices.find(v => v.lang.startsWith('en')) || voices[0];
       if (voice) utterance.voice = voice;
+      setAudioStatus('playing');
       utterance.onend = () => {
+        setAudioStatus('idle');
         handleAudioEnded();
+      };
+      utterance.onerror = (e) => {
+        console.warn('Browser speech synthesis error:', e);
+        setAudioStatus('idle');
       };
       window.speechSynthesis.speak(utterance);
     }
@@ -215,6 +224,14 @@ function App() {
     setTranscript('');
     setStreamLatency(null);
     setTtsLatency(null);
+    setAudioStatus('generating');
+    
+    // Unlock browser audio permissions immediately during click event
+    if (audioRef.current) {
+      audioRef.current.volume = 1.0;
+      audioRef.current.muted = false;
+      audioRef.current.load();
+    }
     
     const slide = slides[index];
     const abortController = new AbortController();
@@ -272,6 +289,7 @@ function App() {
       setStreamLatency(firstTokenMs || (Date.now() - t0));
 
       // 2. Fetch TTS Audio with pre-generated text to bypass duplicate LLM calls!
+      setAudioStatus('generating');
       const ttsT0 = Date.now();
       const ttsRes = await fetch('/api/narrate', {
         method: 'POST',
@@ -290,6 +308,16 @@ function App() {
 
       if (ttsData.audioUrl) {
         setAudioUrl(ttsData.audioUrl);
+        if (audioRef.current) {
+          audioRef.current.src = ttsData.audioUrl;
+          try {
+            await audioRef.current.play();
+            setAudioStatus('playing');
+          } catch (playErr) {
+            console.warn('HTML5 audio play blocked, falling back to Web Speech:', playErr);
+            speakBrowserFallback(fullText);
+          }
+        }
       } else {
         // Fallback to browser voice for instant audio
         speakBrowserFallback(fullText);
@@ -298,21 +326,13 @@ function App() {
       if (err.name !== 'AbortError') {
         console.error('Narration error:', err);
         setIsPlaying(false);
+        setAudioStatus('idle');
       }
     }
   };
 
-  useEffect(() => {
-    if (audioUrl && audioRef.current && isPlaying) {
-      audioRef.current.src = audioUrl;
-      audioRef.current.play().catch(e => {
-        console.warn('Audio play error, falling back to browser speech:', e);
-        if (transcript) speakBrowserFallback(transcript);
-      });
-    }
-  }, [audioUrl]);
-
   const handleAudioEnded = () => {
+    setAudioStatus('idle');
     if (autoAdvance && currentIndex < slides.length - 1) {
       startNarration(currentIndex + 1);
     } else {
@@ -717,6 +737,29 @@ function App() {
                 Next <ChevronRight size={14} />
               </button>
             </div>
+
+            {/* Audio Voice Status & Controls */}
+            {isPlaying && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                <Volume2 size={13} style={{ color: audioStatus === 'playing' ? '#10b981' : '#f59e0b' }} />
+                <span className="font-mono" style={{ fontSize: '11px', color: audioStatus === 'playing' ? '#10b981' : '#f59e0b' }}>
+                  {audioStatus === 'generating' ? 'Synthesizing voice lesson...' : audioStatus === 'playing' ? 'Speaking lesson...' : 'Voice ready'}
+                </span>
+              </div>
+            )}
+
+            {/* Audio Player (visible when audio is loaded) */}
+            <div style={{ width: '100%', maxWidth: '320px', display: audioUrl ? 'flex' : 'none', justifyContent: 'center' }}>
+              <audio 
+                ref={audioRef} 
+                controls 
+                src={audioUrl || ''}
+                onEnded={handleAudioEnded}
+                onPlay={() => setAudioStatus('playing')}
+                onPause={() => { if (!isPlaying) setAudioStatus('idle'); }}
+                style={{ width: '100%', height: '32px', borderRadius: '8px', outline: 'none' }} 
+              />
+            </div>
             
             <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#94a3b8', cursor: 'pointer' }}>
               <input 
@@ -821,9 +864,6 @@ function App() {
           </div>
         </div>
       </div>
-
-      {/* Hidden audio */}
-      <audio ref={audioRef} onEnded={handleAudioEnded} style={{ display: 'none' }} />
     </div>
   );
 }
