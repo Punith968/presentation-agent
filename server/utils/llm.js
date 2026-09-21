@@ -58,31 +58,50 @@ async function* streamNarration(slideText, slideNumber, totalSlides) {
     .replace('{{totalSlides}}', totalSlides)
     .replace('{{slideText}}', slideText);
 
-  let stream;
-  try {
-    if (!process.env.NVIDIA_API_KEY) {
-      throw new Error('NVIDIA API Key not configured');
-    }
-    stream = await nvidia.chat.completions.create({
-      model: 'meta/llama-3.3-70b-instruct',
-      max_tokens: 500,
-      temperature: 0.7,
-      stream: true,
-      messages: [{ role: 'user', content: prompt }]
-    });
-  } catch (err) {
-    console.warn('NVIDIA API stream failure, falling back to OpenRouter:', err.message);
-    if (openrouter) {
+  let stream = null;
+  
+  // Strategy: Try OpenRouter first with fast Llama 3.1 8B (ultra low latency ~150ms), fallback to Llama 3.3 70B, then NVIDIA 11B
+  if (openrouter) {
+    try {
       stream = await openrouter.chat.completions.create({
-        model: 'meta/llama-3.3-70b-instruct',
-        max_tokens: 500,
+        model: 'meta-llama/llama-3.1-8b-instruct',
+        max_tokens: 450,
         temperature: 0.7,
         stream: true,
         messages: [{ role: 'user', content: prompt }]
       });
-    } else {
-      throw new Error('Both NVIDIA API call and OpenRouter fallback failed: ' + err.message);
+    } catch (err) {
+      console.warn('OpenRouter 8B stream failure, trying 70B:', err.message);
+      try {
+        stream = await openrouter.chat.completions.create({
+          model: 'meta-llama/llama-3.3-70b-instruct',
+          max_tokens: 450,
+          temperature: 0.7,
+          stream: true,
+          messages: [{ role: 'user', content: prompt }]
+        });
+      } catch (err2) {
+        console.warn('OpenRouter 70B stream failure, falling back to NVIDIA:', err2.message);
+      }
     }
+  }
+
+  if (!stream && process.env.NVIDIA_API_KEY) {
+    try {
+      stream = await nvidia.chat.completions.create({
+        model: 'meta/llama-3.2-11b-vision-instruct',
+        max_tokens: 450,
+        temperature: 0.7,
+        stream: true,
+        messages: [{ role: 'user', content: prompt }]
+      });
+    } catch (err) {
+      console.error('NVIDIA API stream failure:', err.message);
+    }
+  }
+
+  if (!stream) {
+    throw new Error('All LLM streaming providers failed.');
   }
 
   for await (const chunk of stream) {
@@ -101,31 +120,49 @@ async function* streamAnswer(question, currentSlide, allSlides) {
     .replace('{{allSlides}}', allSlidesText)
     .replace('{{question}}', question);
 
-  let stream;
-  try {
-    if (!process.env.NVIDIA_API_KEY) {
-      throw new Error('NVIDIA API Key not configured');
-    }
-    stream = await nvidia.chat.completions.create({
-      model: 'meta/llama-3.3-70b-instruct',
-      max_tokens: 300,
-      temperature: 0.3,
-      stream: true,
-      messages: [{ role: 'user', content: prompt }]
-    });
-  } catch (err) {
-    console.warn('NVIDIA API stream failure, falling back to OpenRouter:', err.message);
-    if (openrouter) {
+  let stream = null;
+
+  if (openrouter) {
+    try {
       stream = await openrouter.chat.completions.create({
-        model: 'meta/llama-3.3-70b-instruct',
-        max_tokens: 300,
+        model: 'meta-llama/llama-3.1-8b-instruct',
+        max_tokens: 250,
         temperature: 0.3,
         stream: true,
         messages: [{ role: 'user', content: prompt }]
       });
-    } else {
-      throw new Error('Both NVIDIA API call and OpenRouter fallback failed: ' + err.message);
+    } catch (err) {
+      console.warn('OpenRouter QA failure, trying 70B:', err.message);
+      try {
+        stream = await openrouter.chat.completions.create({
+          model: 'meta-llama/llama-3.3-70b-instruct',
+          max_tokens: 250,
+          temperature: 0.3,
+          stream: true,
+          messages: [{ role: 'user', content: prompt }]
+        });
+      } catch (err2) {
+        console.warn('OpenRouter 70B QA failure, trying NVIDIA:', err2.message);
+      }
     }
+  }
+
+  if (!stream && process.env.NVIDIA_API_KEY) {
+    try {
+      stream = await nvidia.chat.completions.create({
+        model: 'meta/llama-3.2-11b-vision-instruct',
+        max_tokens: 250,
+        temperature: 0.3,
+        stream: true,
+        messages: [{ role: 'user', content: prompt }]
+      });
+    } catch (err) {
+      console.error('NVIDIA QA failure:', err.message);
+    }
+  }
+
+  if (!stream) {
+    throw new Error('All LLM QA providers failed.');
   }
 
   for await (const chunk of stream) {

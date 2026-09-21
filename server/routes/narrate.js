@@ -11,6 +11,9 @@ if (!fs.existsSync(AUDIO_DIR)) {
   fs.mkdirSync(AUDIO_DIR, { recursive: true });
 }
 
+// In-memory cache for the last streamed narration per slide
+const narrationCache = {};
+
 router.post('/stream', async (req, res) => {
   const { slideText, slideNumber, totalSlides } = req.body;
 
@@ -28,6 +31,10 @@ router.post('/stream', async (req, res) => {
       res.write(`data: ${JSON.stringify({ token, type: 'token' })}\n\n`);
     }
 
+    // Cache the result so /api/narrate can skip the second LLM call
+    const cacheKey = `${slideNumber}-${crypto.createHash('md5').update(slideText).digest('hex').slice(0,8)}`;
+    narrationCache[cacheKey] = fullText;
+
     res.write(`data: ${JSON.stringify({ type: 'done', fullText })}\n\n`);
     res.end();
 
@@ -39,11 +46,24 @@ router.post('/stream', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { slideText, slideNumber, totalSlides } = req.body;
+  const { slideText, slideNumber, totalSlides, narrationText } = req.body;
   try {
-    let fullText = '';
-    for await (const token of streamNarration(slideText, slideNumber, totalSlides)) {
-      fullText += token;
+    let fullText = narrationText || '';
+
+    // If client didn't supply narrationText directly, check cache or call LLM
+    if (!fullText) {
+      const cacheKey = `${slideNumber}-${crypto.createHash('md5').update(slideText || '').digest('hex').slice(0,8)}`;
+      fullText = narrationCache[cacheKey] || '';
+
+      if (!fullText) {
+        console.log(`Cache miss for slide ${slideNumber}, calling LLM...`);
+        for await (const token of streamNarration(slideText, slideNumber, totalSlides)) {
+          fullText += token;
+        }
+      } else {
+        console.log(`Cache HIT for slide ${slideNumber}`);
+        delete narrationCache[cacheKey];
+      }
     }
 
     let audioUrl = null;
