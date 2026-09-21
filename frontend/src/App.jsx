@@ -279,35 +279,55 @@ function App() {
             {isUploading && (
               <div className="text-center text-sm text-text-secondary animate-pulse">Processing presentation...</div>
             )}
-            {slides.map((slide, idx) => (
-              <div 
-                key={idx} 
-                onClick={() => {
-                  setCurrentIndex(idx);
-                  if (isPlaying) startNarration(idx);
-                }}
-                className={`
-                  rounded-lg overflow-hidden border cursor-pointer transition-all
-                  ${currentIndex === idx ? 'border-accent ring-2 ring-accent/30 bg-accent/10' : 'border-border-subtle bg-bg-card hover:border-accent'}
-                `}
-              >
-                <div className="h-24 bg-black flex items-center justify-center border-b border-border-subtle relative overflow-hidden group">
-                  {slide.pdfUrl ? (
-                    <div className="scale-[0.25] origin-top">
-                      <Document file={slide.pdfUrl}>
-                        <Page pageNumber={slide.slideNumber} width={400} />
-                      </Document>
+            
+            {slides.length > 0 && slides[0].pdfUrl ? (
+              <Document file={slides[0].pdfUrl}>
+                {slides.map((slide, idx) => (
+                  <div 
+                    key={idx} 
+                    onClick={() => {
+                      setCurrentIndex(idx);
+                      if (isPlaying) startNarration(idx);
+                    }}
+                    className={`
+                      rounded-lg overflow-hidden border cursor-pointer transition-all mb-3
+                      ${currentIndex === idx ? 'border-accent ring-2 ring-accent/30 bg-accent/10' : 'border-border-subtle bg-bg-card hover:border-accent'}
+                    `}
+                  >
+                    <div className="h-24 bg-black flex items-center justify-center border-b border-border-subtle relative overflow-hidden group">
+                      <div className="scale-[0.25] origin-top mt-2 pointer-events-none">
+                        <Page pageNumber={slide.slideNumber} width={400} renderTextLayer={false} renderAnnotationLayer={false} />
+                      </div>
+                      <div className="absolute top-1 left-1 bg-black/70 text-[9px] px-1 rounded text-white font-mono">{slide.slideNumber}</div>
                     </div>
-                  ) : (
+                    <div className="p-2">
+                      <div className="font-mono text-[10px] font-bold text-accent-hover uppercase">Slide {slide.slideNumber}</div>
+                    </div>
+                  </div>
+                ))}
+              </Document>
+            ) : (
+              slides.map((slide, idx) => (
+                <div 
+                  key={idx} 
+                  onClick={() => {
+                    setCurrentIndex(idx);
+                    if (isPlaying) startNarration(idx);
+                  }}
+                  className={`
+                    rounded-lg overflow-hidden border cursor-pointer transition-all mb-3
+                    ${currentIndex === idx ? 'border-accent ring-2 ring-accent/30 bg-accent/10' : 'border-border-subtle bg-bg-card hover:border-accent'}
+                  `}
+                >
+                  <div className="h-24 bg-black flex items-center justify-center border-b border-border-subtle relative overflow-hidden group">
                     <div className="font-mono text-2xl font-bold text-white shadow-sm">{slide.slideNumber}</div>
-                  )}
+                  </div>
+                  <div className="p-2">
+                    <div className="font-mono text-[10px] font-bold text-accent-hover uppercase">Slide {slide.slideNumber}</div>
+                  </div>
                 </div>
-                <div className="p-2">
-                  <div className="font-mono text-[10px] font-bold text-accent-hover uppercase">Slide {slide.slideNumber}</div>
-                  <div className="text-[10px] text-text-secondary truncate mt-0.5">{slide.text.replace(/---.*?---/g, '').trim()}</div>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </section>
 
