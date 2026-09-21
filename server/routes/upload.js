@@ -3,7 +3,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { parseSlides } = require('../utils/parseSlides');
-const { convertPptxToImages } = require('../utils/convertSlides');
+const { convertPptxToPdf } = require('../utils/convertSlides');
+const { analyzeImage } = require('../utils/llm');
 const router = express.Router();
 
 function cleanupOldFiles(currentFile) {
@@ -65,29 +66,76 @@ router.post('/', upload.single('presentation'), async (req, res) => {
       return res.status(400).json({ error: 'Upload PDF or PPTX only.' });
     }
 
-    // Convert slides to images for visual display
-    let imageSlides = [];
+    // Convert to PDF for frontend rendering
+    let pdfUrl = null;
+    let finalPdfPath = null;
     try {
-      imageSlides = await convertPptxToImages(filePath, slidesOutputDir);
+      pdfUrl = await convertPptxToPdf(filePath, slidesOutputDir);
+      finalPdfPath = path.join(__dirname, '../..', pdfUrl);
     } catch (err) {
-      console.warn('Image conversion failed, falling back to text only:', err.message);
+      console.warn('PDF conversion failed:', err.message);
     }
 
-    console.log('Text slides count:', textSlides.length);
-    console.log('Image slides count:', imageSlides.length);
-    console.log('Image URLs:', imageSlides.map(s => s.imageUrl));
+    let slides = [];
+    
+    // Try Gemini Native PDF Understanding if key exists
+    if (process.env.GEMINI_API_KEY && finalPdfPath) {
+      try {
+        console.log('Using Gemini Native PDF Understanding...');
+        const { GoogleGenAI } = require('@google/genai');
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        
+        const uploadResult = await ai.files.upload({ file: finalPdfPath });
+        
+        const response = await ai.models.generateContent({
+            model: 'gemini-1.5-flash',
+            contents: [
+                uploadResult,
+                { text: 'Analyze this presentation. For EACH page in the document, extract the text and describe any visual elements/diagrams/charts. Return a strict JSON array where each element has: "slideNumber" (integer) and "text" (string containing text + visual description).' }
+            ],
+            config: {
+                responseMimeType: 'application/json'
+            }
+        });
+        
+        const jsonResult = JSON.parse(response.text());
+        
+        // Match with pdf-parse slides if needed or just use Gemini's
+        slides = jsonResult.map((s, i) => ({
+            slideNumber: s.slideNumber || i + 1,
+            text: s.text,
+            pdfUrl
+        }));
+        
+        console.log('Gemini Native PDF Extraction Successful. Slides:', slides.length);
+      } catch (err) {
+        console.error('Gemini Native PDF failed, falling back to pdf-parse:', err.message);
+      }
+    }
 
-    // Merge text + image data per slide
-    const slides = textSlides.map((slide, i) => ({
-      slideNumber: slide.slideNumber,
-      text: slide.text,
-      imageUrl: imageSlides[i]?.imageUrl || null
-    }));
+    // Fallback to pdf-parse (native text extraction)
+    if (slides.length === 0) {
+      let textSlides = [];
+      if (fileExt === 'pdf') {
+        textSlides = await parseSlides(filePath, 'pdf');
+      } else if (fileExt === 'pptx') {
+        textSlides = await parseSlides(filePath, 'pptx');
+      } else {
+        return res.status(400).json({ error: 'Upload PDF or PPTX only.' });
+      }
+
+      slides = textSlides.map(ts => ({
+        slideNumber: ts.slideNumber,
+        text: ts.text,
+        pdfUrl
+      }));
+    }
 
     res.json({
       slides,
       totalSlides: slides.length,
-      fileName: req.file.originalname
+      fileName: req.file.originalname,
+      pdfUrl
     });
 
   } catch (error) {

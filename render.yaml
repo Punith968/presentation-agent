@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: presentation-ai-agent
+    env: docker
+    region: oregon
+    plan: free
+    branch: main
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

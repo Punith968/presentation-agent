@@ -21,7 +21,14 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../client')));
+const frontendPath = path.join(__dirname, '../frontend/dist');
+const clientPath = path.join(__dirname, '../client');
+
+if (fs.existsSync(frontendPath)) {
+  app.use(express.static(frontendPath));
+} else {
+  app.use(express.static(clientPath));
+}
 app.use('/audio', express.static(path.join(__dirname, '../audio')));
 app.use('/slides', express.static(path.join(__dirname, '../slides')));
 
