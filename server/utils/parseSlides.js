@@ -13,6 +13,40 @@ function render_page(pageData) {
   });
 }
 
+const { XMLParser } = require('fast-xml-parser');
+
+const xmlParser = new XMLParser({
+  ignoreAttributes: true,
+  removeNSPrefix: true
+});
+
+function extractTextFromObject(obj) {
+  let text = '';
+  if (obj === null || obj === undefined) return text;
+  
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      text += extractTextFromObject(item) + ' ';
+    }
+  } else if (typeof obj === 'object') {
+    for (const key in obj) {
+      if (key === 't') {
+        const val = obj[key];
+        if (typeof val === 'string') {
+          text += val + ' ';
+        } else {
+          text += extractTextFromObject(val) + ' ';
+        }
+      } else {
+        text += extractTextFromObject(obj[key]) + ' ';
+      }
+    }
+  } else if (typeof obj === 'string') {
+    text += obj + ' ';
+  }
+  return text;
+}
+
 async function parseSlides(filePath, fileType) {
   const slides = [];
 
@@ -21,12 +55,14 @@ async function parseSlides(filePath, fileType) {
     const data = await pdf(dataBuffer, { pagerender: render_page });
     
     // Split by our unique delimiter
-    const pages = data.text.split('|||PAGE_BOUNDARY|||').filter(p => p.trim());
+    const parts = data.text.split('|||PAGE_BOUNDARY|||');
+    // The first part is always empty because the text starts with the boundary delimiter
+    const pages = parts.slice(1);
     
     pages.forEach((pageText, index) => {
       slides.push({
         slideNumber: index + 1,
-        text: pageText.trim()
+        text: pageText.trim() || 'Visual Slide (No extractable text)'
       });
     });
   } else if (fileType === 'pptx') {
@@ -46,12 +82,18 @@ async function parseSlides(filePath, fileType) {
       
       // Extract main slide text
       const content = await zip.file(slideFile).async('string');
-      const textMatches = content.match(/<a:t>([^<]*)<\/a:t>/g);
       let text = '';
-      if (textMatches) {
-        text = textMatches
-          .map(m => m.replace(/<a:t>|<\/a:t>/g, ''))
-          .join(' ');
+      try {
+        const parsed = xmlParser.parse(content);
+        text = extractTextFromObject(parsed).trim().replace(/\s+/g, ' ');
+      } catch (err) {
+        console.warn(`XML parsing failed for slide ${slideNum}, falling back to regex:`, err.message);
+        const textMatches = content.match(/<a:t>([^<]*)<\/a:t>/g);
+        if (textMatches) {
+          text = textMatches
+            .map(m => m.replace(/<a:t>|<\/a:t>/g, ''))
+            .join(' ');
+        }
       }
 
       // Extract speaker notes
@@ -59,11 +101,17 @@ async function parseSlides(filePath, fileType) {
       const notesFile = `ppt/notesSlides/notesSlide${slideNum}.xml`;
       if (zip.file(notesFile)) {
         const notesContent = await zip.file(notesFile).async('string');
-        const notesMatches = notesContent.match(/<a:t>([^<]*)<\/a:t>/g);
-        if (notesMatches) {
-          notesText = notesMatches
-            .map(m => m.replace(/<a:t>|<\/a:t>/g, ''))
-            .join(' ');
+        try {
+          const parsedNotes = xmlParser.parse(notesContent);
+          notesText = extractTextFromObject(parsedNotes).trim().replace(/\s+/g, ' ');
+        } catch (err) {
+          console.warn(`XML parsing failed for notes on slide ${slideNum}, falling back to regex:`, err.message);
+          const notesMatches = notesContent.match(/<a:t>([^<]*)<\/a:t>/g);
+          if (notesMatches) {
+            notesText = notesMatches
+              .map(m => m.replace(/<a:t>|<\/a:t>/g, ''))
+              .join(' ');
+          }
         }
       }
 
