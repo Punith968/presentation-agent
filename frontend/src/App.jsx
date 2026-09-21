@@ -239,7 +239,7 @@ function App() {
   };
 
   return (
-    <div className="h-screen w-full min-h-[768px] min-w-[1024px] overflow-auto flex flex-col p-4">
+    <div className="min-h-screen w-full overflow-y-auto overflow-x-hidden flex flex-col p-4 bg-bg-app">
       {/* Header */}
       <header className="flex items-center gap-3 pb-3 border-b border-border-subtle mb-4">
         <span className="text-2xl drop-shadow-[0_0_10px_var(--color-accent)]">🎓</span>
@@ -249,17 +249,18 @@ function App() {
       </header>
 
       {/* Main Grid */}
-      <main className="flex-1 min-h-0 grid grid-cols-[240px_1fr_320px] gap-4">
+      <main className="flex-1 min-h-0 flex flex-col lg:flex-row gap-4">
         
         {/* Left Panel */}
-        <section className="bg-bg-panel backdrop-blur-xl border border-border-subtle rounded-2xl flex flex-col overflow-hidden">
-          <div className="p-3 border-b border-border-subtle bg-white/5 uppercase text-xs font-mono font-bold text-accent-hover tracking-wider">
-            Slide Deck
+        <section className="w-full lg:w-[240px] flex-shrink-0 bg-bg-panel backdrop-blur-xl border border-border-subtle rounded-2xl flex flex-col overflow-hidden max-h-[300px] lg:max-h-none">
+          <div className="p-3 border-b border-border-subtle bg-white/5 uppercase text-xs font-mono font-bold text-accent-hover tracking-wider flex justify-between items-center">
+            <span>Slide Deck</span>
+            {latency && <span className="text-[10px] text-text-secondary bg-black/40 px-2 py-0.5 rounded">⚡ {latency}ms</span>}
           </div>
           
           <div 
             onClick={() => fileInputRef.current?.click()}
-            className="m-4 p-6 border-2 border-dashed border-border-subtle rounded-xl text-center cursor-pointer hover:border-accent hover:bg-accent/10 transition-colors"
+            className="m-4 p-6 border-2 border-dashed border-border-subtle rounded-xl text-center cursor-pointer hover:border-accent hover:bg-accent/10 transition-colors shrink-0"
           >
             <Upload className="mx-auto text-text-secondary mb-2" />
             <p className="text-xs text-text-secondary mb-3">Upload PDF or PPTX</p>
@@ -332,8 +333,8 @@ function App() {
         </section>
 
         {/* Center Panel */}
-        <section className="bg-bg-panel backdrop-blur-xl border border-border-subtle rounded-2xl flex flex-col p-4">
-          <div className="flex-1 bg-bg-blackboard border border-border-subtle rounded-xl flex flex-col overflow-hidden relative shadow-[inset_0_0_20px_rgba(0,0,0,0.6)]">
+        <section className="flex-1 flex flex-col min-h-[400px] lg:min-h-0 bg-bg-panel backdrop-blur-xl border border-border-subtle rounded-2xl p-4">
+          <div className="flex-1 min-h-0 flex flex-col bg-bg-blackboard border border-border-subtle rounded-xl relative overflow-hidden shadow-[inset_0_0_20px_rgba(0,0,0,0.6)]">
             <div className="flex justify-between items-center p-2.5 bg-black/40 border-b border-border-subtle z-10">
               <div className="font-mono text-xs text-text-secondary">
                 Slide {slides.length > 0 ? currentIndex + 1 : 0} of {slides.length}
@@ -420,7 +421,7 @@ function App() {
         </section>
 
         {/* Right Panel */}
-        <section className="flex flex-col gap-4 min-h-0 h-full">
+        <section className="w-full lg:w-[320px] flex-shrink-0 flex flex-col gap-4 min-h-[500px] lg:min-h-0 lg:h-full">
           {/* Teleprompter */}
           <div className="flex-1 bg-bg-panel backdrop-blur-xl border border-border-subtle rounded-2xl flex flex-col overflow-hidden max-h-[300px]">
             <div className="p-3 border-b border-border-subtle bg-white/5 uppercase text-xs font-mono font-bold text-accent-hover tracking-wider">
