@@ -7,6 +7,17 @@ const { convertPptxToPdf } = require('../utils/convertSlides');
 const { analyzeImage } = require('../utils/llm');
 const router = express.Router();
 
+const UPLOADS_DIR = path.join(__dirname, '../../uploads');
+const SLIDES_DIR = path.join(__dirname, '../../slides');
+const AUDIO_DIR = path.join(__dirname, '../../audio');
+
+// Ensure directories exist
+[UPLOADS_DIR, SLIDES_DIR, AUDIO_DIR].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
+
 function cleanupOldFiles(currentFile) {
   try {
     const uploadsDir = path.join(__dirname, '../../uploads');

@@ -6,6 +6,11 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 
+const AUDIO_DIR = path.join(__dirname, '../../audio');
+if (!fs.existsSync(AUDIO_DIR)) {
+  fs.mkdirSync(AUDIO_DIR, { recursive: true });
+}
+
 router.post('/stream', async (req, res) => {
   const { slideText, slideNumber, totalSlides } = req.body;
 
