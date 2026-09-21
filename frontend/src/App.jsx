@@ -291,22 +291,22 @@ function App() {
       </header>
 
       {/* Three-column layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr 300px', gap: '16px', minHeight: 'calc(100vh - 80px)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 280px', gap: '12px', height: 'calc(100vh - 80px)', overflow: 'hidden' }}>
         
         {/* ═══ LEFT PANEL: Slide Deck ═══ */}
-        <div style={{ background: 'rgba(15,18,28,0.75)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden', maxHeight: 'calc(100vh - 80px)' }}>
-          <div className="font-mono" style={{ padding: '12px', borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(255,255,255,0.03)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#818cf8' }}>
+        <div style={{ background: 'rgba(15,18,28,0.75)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div className="font-mono" style={{ padding: '10px 12px', borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(255,255,255,0.03)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#818cf8' }}>
             Slide Deck ({slides.length})
           </div>
           
           {/* Upload area */}
           <div 
             onClick={() => fileInputRef.current?.click()}
-            style={{ margin: '12px', padding: '20px 12px', border: '2px dashed rgba(99,102,241,0.2)', borderRadius: '12px', textAlign: 'center', cursor: 'pointer', flexShrink: 0 }}
+            style={{ margin: '8px', padding: '14px 8px', border: '2px dashed rgba(99,102,241,0.2)', borderRadius: '12px', textAlign: 'center', cursor: 'pointer', flexShrink: 0 }}
           >
-            <Upload style={{ margin: '0 auto 8px', color: '#94a3b8' }} size={20} />
-            <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0 0 8px' }}>Upload PDF or PPTX</p>
-            <span style={{ background: '#6366f1', color: '#fff', fontSize: '11px', padding: '4px 16px', borderRadius: '6px', fontWeight: 500 }}>Browse</span>
+            <Upload style={{ margin: '0 auto 6px', color: '#94a3b8' }} size={18} />
+            <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0 0 6px' }}>Upload PDF or PPTX</p>
+            <span style={{ background: '#6366f1', color: '#fff', fontSize: '11px', padding: '3px 14px', borderRadius: '6px', fontWeight: 500 }}>Browse</span>
             <input 
               type="file" 
               ref={fileInputRef} 
@@ -317,17 +317,17 @@ function App() {
           </div>
 
           {/* Thumbnail list */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {isUploading && (
-              <div style={{ textAlign: 'center', fontSize: '13px', color: '#94a3b8', padding: '16px 0', animation: 'pulse 1.5s ease-in-out infinite' }}>Processing...</div>
+              <div style={{ textAlign: 'center', fontSize: '12px', color: '#94a3b8', padding: '16px 0' }}>Processing...</div>
             )}
             
             {currentPdfUrl && slides.length > 0 && (
               <Document 
                 file={currentPdfUrl} 
                 onLoadSuccess={({ numPages }) => setPdfNumPages(numPages)}
-                loading={<div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '12px', padding: '12px' }}>Loading PDF...</div>}
-                error={<div style={{ textAlign: 'center', color: '#ef4444', fontSize: '12px', padding: '12px' }}>PDF load error</div>}
+                loading={<div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '11px', padding: '12px' }}>Loading PDF...</div>}
+                error={<div style={{ textAlign: 'center', color: '#ef4444', fontSize: '11px', padding: '12px' }}>PDF load error</div>}
               >
                 {slides.map((slide, idx) => (
                   <div 
@@ -344,21 +344,22 @@ function App() {
                       background: currentIndex === idx ? 'rgba(99,102,241,0.1)' : 'rgba(22,26,38,0.6)',
                       boxShadow: currentIndex === idx ? '0 0 12px rgba(99,102,241,0.2)' : 'none',
                       transition: 'all 0.2s',
+                      marginBottom: '4px',
                     }}
                   >
-                    <div style={{ height: '110px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
+                    <div style={{ height: '100px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
                       <Page 
                         pageNumber={slide.slideNumber} 
-                        width={190} 
+                        width={170} 
                         renderTextLayer={false} 
                         renderAnnotationLayer={false} 
                       />
-                      <div className="font-mono" style={{ position: 'absolute', top: '4px', left: '4px', background: 'rgba(0,0,0,0.8)', color: '#fff', fontSize: '9px', padding: '1px 5px', borderRadius: '3px' }}>
+                      <div className="font-mono" style={{ position: 'absolute', top: '3px', left: '3px', background: 'rgba(0,0,0,0.8)', color: '#fff', fontSize: '9px', padding: '1px 4px', borderRadius: '3px' }}>
                         {slide.slideNumber}
                       </div>
                     </div>
-                    <div style={{ padding: '6px 8px' }}>
-                      <div className="font-mono" style={{ fontSize: '10px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase' }}>Slide {slide.slideNumber}</div>
+                    <div style={{ padding: '4px 6px' }}>
+                      <div className="font-mono" style={{ fontSize: '9px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase' }}>Slide {slide.slideNumber}</div>
                     </div>
                   </div>
                 ))}
@@ -380,13 +381,14 @@ function App() {
                   cursor: 'pointer',
                   background: currentIndex === idx ? 'rgba(99,102,241,0.1)' : 'rgba(22,26,38,0.6)',
                   transition: 'all 0.2s',
+                  marginBottom: '4px',
                 }}
               >
-                <div style={{ height: '80px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span className="font-mono" style={{ fontSize: '24px', fontWeight: 700, color: '#fff' }}>{slide.slideNumber}</span>
+                <div style={{ height: '60px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span className="font-mono" style={{ fontSize: '20px', fontWeight: 700, color: '#fff' }}>{slide.slideNumber}</span>
                 </div>
-                <div style={{ padding: '6px 8px' }}>
-                  <div className="font-mono" style={{ fontSize: '10px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase' }}>Slide {slide.slideNumber}</div>
+                <div style={{ padding: '4px 6px' }}>
+                  <div className="font-mono" style={{ fontSize: '9px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase' }}>Slide {slide.slideNumber}</div>
                 </div>
               </div>
             ))}
@@ -396,10 +398,10 @@ function App() {
         {/* ═══ CENTER PANEL: Main Slide View ═══ */}
         <div style={{ background: 'rgba(15,18,28,0.75)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Slide viewer */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#111520', borderRadius: '12px', margin: '12px', overflow: 'hidden', boxShadow: 'inset 0 0 20px rgba(0,0,0,0.6)', border: '1px solid rgba(99,102,241,0.15)' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#111520', borderRadius: '12px', margin: '8px', overflow: 'hidden', boxShadow: 'inset 0 0 20px rgba(0,0,0,0.6)', border: '1px solid rgba(99,102,241,0.15)' }}>
             {/* Top bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(0,0,0,0.4)', borderBottom: '1px solid rgba(99,102,241,0.15)' }}>
-              <span className="font-mono" style={{ fontSize: '12px', color: '#94a3b8' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', background: 'rgba(0,0,0,0.4)', borderBottom: '1px solid rgba(99,102,241,0.15)', flexShrink: 0 }}>
+              <span className="font-mono" style={{ fontSize: '11px', color: '#94a3b8' }}>
                 Slide {slides.length > 0 ? currentIndex + 1 : 0} of {slides.length}
               </span>
               <button style={{ color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
@@ -407,8 +409,8 @@ function App() {
               </button>
             </div>
             
-            {/* Slide content */}
-            <div ref={mainViewRef} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', background: 'radial-gradient(circle, #1a2233 0%, #0d121c 100%)', overflow: 'auto' }}>
+            {/* Slide content - FIXED: use overflow:auto so the slide scrolls within this box */}
+            <div ref={mainViewRef} style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'radial-gradient(circle, #1a2233 0%, #0d121c 100%)' }}>
               {slides.length === 0 ? (
                 <p className="font-mono" style={{ color: '#94a3b8', fontSize: '14px' }}>Upload a presentation to begin</p>
               ) : (
@@ -421,11 +423,10 @@ function App() {
                       pageNumber={slides[currentIndex]?.slideNumber || 1} 
                       renderTextLayer={false}
                       renderAnnotationLayer={false}
-                      width={Math.min(typeof window !== 'undefined' ? window.innerWidth * 0.4 : 600, 700)}
                     />
                   </Document>
                 ) : (
-                  <div style={{ width: '100%', height: '100%', padding: '32px', overflowY: 'auto', color: '#e2e8f0', fontSize: '16px', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                  <div style={{ width: '100%', padding: '32px', overflowY: 'auto', color: '#e2e8f0', fontSize: '16px', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
                     {slides[currentIndex]?.text.replace(/--- VISUAL DESCRIPTION ---[\s\S]*/, '')}
                   </div>
                 )
@@ -493,11 +494,11 @@ function App() {
         </div>
 
         {/* ═══ RIGHT PANEL: Transcription + Q&A ═══ */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: 'calc(100vh - 80px)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden' }}>
           
           {/* Teleprompter */}
-          <div style={{ flex: 1, background: 'rgba(15,18,28,0.75)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div className="font-mono" style={{ padding: '12px', borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(255,255,255,0.03)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#818cf8' }}>
+          <div style={{ flex: 1, background: 'rgba(15,18,28,0.75)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+            <div className="font-mono" style={{ padding: '10px 12px', borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(255,255,255,0.03)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#818cf8', flexShrink: 0 }}>
               Lesson Transcription
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px', background: 'rgba(0,0,0,0.1)' }}>
@@ -508,8 +509,8 @@ function App() {
           </div>
 
           {/* Q&A */}
-          <div style={{ flex: 1.5, background: 'rgba(15,18,28,0.75)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div className="font-mono" style={{ padding: '12px', borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(255,255,255,0.03)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#818cf8' }}>
+          <div style={{ flex: 1.5, background: 'rgba(15,18,28,0.75)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+            <div className="font-mono" style={{ padding: '10px 12px', borderBottom: '1px solid rgba(99,102,241,0.15)', background: 'rgba(255,255,255,0.03)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#818cf8', flexShrink: 0 }}>
               Classroom Q&A
             </div>
             

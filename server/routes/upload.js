@@ -90,24 +90,31 @@ router.post('/', upload.single('presentation'), async (req, res) => {
     let slides = [];
     
     // Try Gemini Native PDF Understanding if key exists
-    if (process.env.GEMINI_API_KEY && finalPdfPath) {
+    if (process.env.GEMINI_API_KEY && finalPdfPath && fs.existsSync(finalPdfPath)) {
       try {
         console.log('Using Gemini Native PDF Understanding...');
         const { GoogleGenAI } = require('@google/genai');
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         
-        const uploadResult = await ai.files.upload({ file: finalPdfPath });
+        // Read PDF as base64 for inline data (works reliably)
+        const pdfBuffer = fs.readFileSync(finalPdfPath);
+        const pdfBase64 = pdfBuffer.toString('base64');
         
         const response = await ai.models.generateContent({
-            model: 'gemini-1.5-flash',
+            model: 'gemini-2.0-flash',
             contents: [
                 {
-                    fileData: {
-                        mimeType: uploadResult.mimeType,
-                        fileUri: uploadResult.uri
-                    }
-                },
-                { text: 'Analyze this presentation. For EACH page in the document, extract the text and describe any visual elements/diagrams/charts. Return a strict JSON array where each element has: "slideNumber" (integer) and "text" (string containing text + visual description).' }
+                    role: 'user',
+                    parts: [
+                        {
+                            inlineData: {
+                                mimeType: 'application/pdf',
+                                data: pdfBase64
+                            }
+                        },
+                        { text: 'Analyze this presentation. For EACH page, extract the text and describe visual elements. Return a strict JSON array where each element has: "slideNumber" (integer) and "text" (string with text + visual description).' }
+                    ]
+                }
             ],
             config: {
                 responseMimeType: 'application/json'
@@ -116,7 +123,6 @@ router.post('/', upload.single('presentation'), async (req, res) => {
         
         const jsonResult = JSON.parse(response.text());
         
-        // Match with pdf-parse slides if needed or just use Gemini's
         slides = jsonResult.map((s, i) => ({
             slideNumber: s.slideNumber || i + 1,
             text: s.text,
