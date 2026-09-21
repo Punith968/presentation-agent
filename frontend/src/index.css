@@ -19,16 +19,21 @@
   --color-border-focus: rgba(99, 102, 241, 0.45);
 }
 
-body {
+html, body {
+  margin: 0;
+  padding: 0;
   background-color: var(--color-bg-dark);
   color: var(--color-text-primary);
   font-family: 'Outfit', sans-serif;
-  overflow: hidden;
+  /* Allow scrolling in both directions */
+  overflow-x: auto;
+  overflow-y: auto;
 }
 
 /* Custom scrollbar for better look */
 ::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -39,4 +44,11 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(99, 102, 241, 0.6);
+}
+
+/* Fix react-pdf canvas overflow */
+.react-pdf__Page canvas {
+  display: block;
+  max-width: 100%;
+  height: auto !important;
 }
