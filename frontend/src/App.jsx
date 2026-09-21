@@ -6,6 +6,30 @@ import 'react-pdf/dist/Page/TextLayer.css';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
+function ThumbnailPage({ slide }) {
+  const [inView, setInView] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setInView(true);
+      },
+      { rootMargin: '300px' }
+    );
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={ref} className="pointer-events-none flex items-center justify-center w-full h-full min-h-[50px]">
+      {inView ? (
+        <Page pageNumber={slide.slideNumber} width={200} renderTextLayer={false} renderAnnotationLayer={false} className="shadow-sm" />
+      ) : null}
+    </div>
+  );
+}
+
 function App() {
   const [slides, setSlides] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -310,9 +334,7 @@ function App() {
                     `}
                   >
                     <div className="h-28 bg-black flex items-center justify-center border-b border-border-subtle relative overflow-hidden group">
-                      <div className="pointer-events-none flex items-center justify-center w-full h-full">
-                        <Page pageNumber={slide.slideNumber} width={200} renderTextLayer={false} renderAnnotationLayer={false} className="shadow-sm" />
-                      </div>
+                      <ThumbnailPage slide={slide} />
                       <div className="absolute top-1 left-1 bg-black/80 text-[10px] px-1.5 py-0.5 rounded text-white font-mono z-10">{slide.slideNumber}</div>
                     </div>
                     <div className="p-2">
