@@ -1,4 +1,4 @@
-FROM node:20-bullseye
+FROM node:20-bookworm
 
 # Prevent interactive prompts during apt-get
 ENV DEBIAN_FRONTEND=noninteractive
