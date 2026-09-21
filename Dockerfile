@@ -1,7 +1,10 @@
 FROM node:20-bullseye
 
-# Install libreoffice for PPTX to PDF conversion
-RUN apt-get update && apt-get install -y \
+# Prevent interactive prompts during apt-get
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install libreoffice for PPTX to PDF conversion (without unnecessary packages)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice \
     && rm -rf /var/lib/apt/lists/*
 
