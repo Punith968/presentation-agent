@@ -3,17 +3,28 @@ const OpenAI = require('openai');
 const fs = require('fs');
 const path = require('path');
 
-const nvidia = new OpenAI({
-  apiKey: process.env.NVIDIA_API_KEY,
-  baseURL: 'https://integrate.api.nvidia.com/v1'
-});
-
+// Clients are created only when their key is configured: the OpenAI SDK
+// throws on a missing key, which previously crashed the server at startup
+// whenever NVIDIA_API_KEY was unset.
 const openrouter = process.env.OPENROUTER_API_KEY
-  ? new OpenAI({
-      apiKey: process.env.OPENROUTER_API_KEY,
-      baseURL: 'https://openrouter.ai/api/v1'
-    })
+  ? new OpenAI({ apiKey: process.env.OPENROUTER_API_KEY, baseURL: 'https://openrouter.ai/api/v1' })
   : null;
+
+const nvidia = process.env.NVIDIA_API_KEY
+  ? new OpenAI({ apiKey: process.env.NVIDIA_API_KEY, baseURL: 'https://integrate.api.nvidia.com/v1' })
+  : null;
+
+/**
+ * Ordered fallback chain: fast OpenRouter 8B (lowest latency), then
+ * OpenRouter 70B, then NVIDIA NIM 11B.
+ */
+function defaultProviders() {
+  return [
+    { name: 'OpenRouter Llama 3.1 8B', client: openrouter, model: 'meta-llama/llama-3.1-8b-instruct' },
+    { name: 'OpenRouter Llama 3.3 70B', client: openrouter, model: 'meta-llama/llama-3.3-70b-instruct' },
+    { name: 'NVIDIA Llama 3.2 11B', client: nvidia, model: 'meta/llama-3.2-11b-vision-instruct' },
+  ].filter(p => p.client);
+}
 
 const NARRATION_PROMPT = `You are a warm, engaging, and highly knowledgeable classroom teacher presenting a lesson to your students.
 You are on slide {{slideNumber}} of {{totalSlides}}.
@@ -52,123 +63,72 @@ Rules:
 Respond ONLY in this JSON format (no markdown, no extra text):
 {"answer":"...","confidence":"high","disclaimer":""}`;
 
-async function* streamNarration(slideText, slideNumber, totalSlides) {
-  const prompt = NARRATION_PROMPT
-    .replace('{{slideNumber}}', slideNumber)
-    .replace('{{totalSlides}}', totalSlides)
-    .replace('{{slideText}}', slideText);
+/**
+ * Replace {{key}} placeholders. A function replacer is used so `$&`, `$1`
+ * and similar sequences in slide text are inserted literally.
+ */
+function fillTemplate(template, values) {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key) =>
+    Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match
+  );
+}
 
+function buildNarrationPrompt(slideText, slideNumber, totalSlides) {
+  return fillTemplate(NARRATION_PROMPT, { slideNumber, totalSlides, slideText });
+}
+
+function buildQaPrompt(question, currentSlide, allSlides) {
+  const allSlidesText = (allSlides || [])
+    .map(s => `Slide ${s.slideNumber}: ${s.text}`)
+    .join('\n\n');
+  return fillTemplate(QA_PROMPT, { currentSlide, allSlides: allSlidesText, question });
+}
+
+/**
+ * Open a streaming completion on the first provider that accepts the request,
+ * then yield its text tokens.
+ */
+async function* streamWithFallback(prompt, { maxTokens, temperature }, providers = defaultProviders()) {
   let stream = null;
-  
-  // Strategy: Try OpenRouter first with fast Llama 3.1 8B (ultra low latency ~150ms), fallback to Llama 3.3 70B, then NVIDIA 11B
-  if (openrouter) {
+  for (const provider of providers) {
     try {
-      stream = await openrouter.chat.completions.create({
-        model: 'meta-llama/llama-3.1-8b-instruct',
-        max_tokens: 450,
-        temperature: 0.7,
+      stream = await provider.client.chat.completions.create({
+        model: provider.model,
+        max_tokens: maxTokens,
+        temperature,
         stream: true,
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role: 'user', content: prompt }],
       });
+      break;
     } catch (err) {
-      console.warn('OpenRouter 8B stream failure, trying 70B:', err.message);
-      try {
-        stream = await openrouter.chat.completions.create({
-          model: 'meta-llama/llama-3.3-70b-instruct',
-          max_tokens: 450,
-          temperature: 0.7,
-          stream: true,
-          messages: [{ role: 'user', content: prompt }]
-        });
-      } catch (err2) {
-        console.warn('OpenRouter 70B stream failure, falling back to NVIDIA:', err2.message);
-      }
-    }
-  }
-
-  if (!stream && process.env.NVIDIA_API_KEY) {
-    try {
-      stream = await nvidia.chat.completions.create({
-        model: 'meta/llama-3.2-11b-vision-instruct',
-        max_tokens: 450,
-        temperature: 0.7,
-        stream: true,
-        messages: [{ role: 'user', content: prompt }]
-      });
-    } catch (err) {
-      console.error('NVIDIA API stream failure:', err.message);
+      console.warn(`${provider.name} failed, trying next provider:`, err.message);
     }
   }
 
   if (!stream) {
-    throw new Error('All LLM streaming providers failed.');
+    throw new Error('All LLM streaming providers failed (check OPENROUTER_API_KEY / NVIDIA_API_KEY).');
   }
 
   for await (const chunk of stream) {
-    const token = chunk.choices[0]?.delta?.content;
+    const token = chunk.choices?.[0]?.delta?.content;
     if (token) yield token;
   }
 }
 
-async function* streamAnswer(question, currentSlide, allSlides) {
-  const allSlidesText = allSlides
-    .map(s => `Slide ${s.slideNumber}: ${s.text}`)
-    .join('\n\n');
+function streamNarration(slideText, slideNumber, totalSlides, providers) {
+  return streamWithFallback(
+    buildNarrationPrompt(slideText, slideNumber, totalSlides),
+    { maxTokens: 450, temperature: 0.7 },
+    providers
+  );
+}
 
-  const prompt = QA_PROMPT
-    .replace('{{currentSlide}}', currentSlide)
-    .replace('{{allSlides}}', allSlidesText)
-    .replace('{{question}}', question);
-
-  let stream = null;
-
-  if (openrouter) {
-    try {
-      stream = await openrouter.chat.completions.create({
-        model: 'meta-llama/llama-3.1-8b-instruct',
-        max_tokens: 250,
-        temperature: 0.3,
-        stream: true,
-        messages: [{ role: 'user', content: prompt }]
-      });
-    } catch (err) {
-      console.warn('OpenRouter QA failure, trying 70B:', err.message);
-      try {
-        stream = await openrouter.chat.completions.create({
-          model: 'meta-llama/llama-3.3-70b-instruct',
-          max_tokens: 250,
-          temperature: 0.3,
-          stream: true,
-          messages: [{ role: 'user', content: prompt }]
-        });
-      } catch (err2) {
-        console.warn('OpenRouter 70B QA failure, trying NVIDIA:', err2.message);
-      }
-    }
-  }
-
-  if (!stream && process.env.NVIDIA_API_KEY) {
-    try {
-      stream = await nvidia.chat.completions.create({
-        model: 'meta/llama-3.2-11b-vision-instruct',
-        max_tokens: 250,
-        temperature: 0.3,
-        stream: true,
-        messages: [{ role: 'user', content: prompt }]
-      });
-    } catch (err) {
-      console.error('NVIDIA QA failure:', err.message);
-    }
-  }
-
-  if (!stream) {
-    throw new Error('All LLM QA providers failed.');
-  }
-
-  for await (const chunk of stream) {
-    const token = chunk.choices[0]?.delta?.content;
-    if (token) yield token;
-  }
+function streamAnswer(question, currentSlide, allSlides, providers) {
+  return streamWithFallback(
+    buildQaPrompt(question, currentSlide, allSlides),
+    { maxTokens: 250, temperature: 0.3 },
+    providers
+  );
 }
 
 async function analyzeImage(imagePath) {
@@ -221,4 +181,12 @@ Do not add introductory greeting text, just output the slide content description
   return '';
 }
 
-module.exports = { streamNarration, streamAnswer, analyzeImage };
+module.exports = {
+  streamNarration,
+  streamAnswer,
+  analyzeImage,
+  streamWithFallback,
+  buildNarrationPrompt,
+  buildQaPrompt,
+  fillTemplate,
+};
