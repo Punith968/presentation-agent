@@ -1,25 +1,31 @@
 {
   "name": "presentation-agent",
   "version": "1.0.0",
-  "description": "AI Presentation Agent with TTS and Q&A",
+  "description": "AI co-presenter that narrates PPTX/PDF slides with neural TTS and answers live audience questions",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
+    "test": "node --test \"test/*.test.js\"",
     "build:frontend": "cd frontend && npm run build"
   },
   "dependencies": {
-    "@google/genai": "^2.23.0",
-    "@openrouter/sdk": "^0.12.31",
     "cors": "^2.8.5",
     "dotenv": "^16.0.0",
     "express": "^4.18.0",
     "fast-xml-parser": "^5.7.3",
-    "gtts": "^0.2.1",
     "jszip": "^3.10.1",
     "multer": "^1.4.5-lts.1",
     "openai": "^6.36.0",
-    "pdf-parse": "^1.1.1",
-    "pdf-to-img": "^6.0.0"
+    "pdf-parse": "^1.1.1"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "author": "Punith C",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Punith968/presentation-agent.git"
   }
 }

@@ -1,6 +1,9 @@
-const { streamAnswer } = require('../server/utils/llm');
-
-// A mock parser class matching routes/qa.js
+/**
+ * Incrementally extracts the "answer" string from a streamed JSON response
+ * like {"answer":"...","confidence":"high","disclaimer":""}, so tokens can be
+ * shown to the user before the JSON object is complete. If the model ignores
+ * the JSON format, raw text is passed through after 50 characters.
+ */
 class StreamingAnswerParser {
   constructor() {
     this.buffer = '';
@@ -69,46 +72,18 @@ class StreamingAnswerParser {
   }
 }
 
-async function test() {
+/** Parse the final model output into { answer, confidence, disclaimer }. */
+function parseFinalAnswer(fullText) {
+  const fallback = { answer: fullText, confidence: 'medium', disclaimer: '' };
   try {
-    const question = "What is the formula on slide 1?";
-    const currentSlide = 1;
-    const allSlides = [
-      { slideNumber: 1, text: "Temperature coefficient of resistance: R(T) = R(T0)(1+aDT)" }
-    ];
-
-    console.log(`Sending question: "${question}"`);
-    console.log('Streaming answer tokens (should print plain text only, no JSON symbols):');
-    
-    let rawOutput = '';
-    let parsedOutput = '';
-    const parser = new StreamingAnswerParser();
-
-    for await (const token of streamAnswer(question, currentSlide, allSlides)) {
-      rawOutput += token;
-      const clean = parser.feed(token);
-      if (clean) {
-        parsedOutput += clean;
-        process.stdout.write(clean);
-      }
-    }
-    
-    console.log('\n\n--- Stream Completed ---');
-    console.log('Raw API Output:', rawOutput);
-    console.log('Filtered Parser Output:', parsedOutput);
-
-    if (rawOutput.includes('{"answer"') && !parsedOutput.includes('{"answer"')) {
-      console.log('Test PASSED: Successfully stripped JSON brackets and syntax during streaming.');
-      process.exit(0);
-    } else {
-      console.warn('Warning: Raw output did not contain JSON tags, or parser failed to strip them.');
-      process.exit(1);
-    }
-
-  } catch (err) {
-    console.error('Test FAILED with error:', err);
-    process.exit(1);
+    const clean = fullText.replace(/```json|```/g, '').trim();
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (!match) return fallback;
+    const parsed = JSON.parse(match[0]);
+    return { ...fallback, ...parsed };
+  } catch {
+    return fallback;
   }
 }
 
-test();
+module.exports = { StreamingAnswerParser, parseFinalAnswer };

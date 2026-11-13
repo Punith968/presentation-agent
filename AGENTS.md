@@ -1,40 +1,40 @@
 # Presentation AI Agent
 
-## Running the App
+## Running the app
 ```bash
-npm start
+npm install && npm --prefix frontend install
+npm run build:frontend   # server serves frontend/dist
+npm start                # http://localhost:3000
 ```
-Server runs at `http://localhost:3000`.
+For frontend hot reload: `cd frontend && npm run dev`.
 
-## Environment Setup
-Copy `.env.example` to `.env` and add API keys:
-```bash
-cp .env.example .env
-```
+## Environment
+Copy `.env.example` to `.env`. At least one LLM key is required:
+- `OPENROUTER_API_KEY` (primary: Llama 3.1 8B, then 3.3 70B)
+- `NVIDIA_API_KEY` (fallback: Llama 3.2 11B via NVIDIA NIM)
 
-Required:
-- `NVIDIA_API_KEY` (get from build.nvidia.com - primary)
-- `OPENROUTER_API_KEY` (get from openrouter.ai - fallback)
-
-## Entry Points
-- Server: `server/index.js`
-- Client: `client/index.html`
+Never hard-code API keys in source files or scripts.
 
 ## Commands
-- `npm start` - Start server
-- `npm run dev` - Same as start
+- `npm start` / `npm run dev` - start the server
+- `npm test` - Node built-in test runner (`test/*.test.js`, no network)
+- `npm run build:frontend` - production build of the React frontend
+- `cd frontend && npm run lint` - oxlint
 
 ## Architecture
-- Backend: Node.js + Express
-- Frontend: Vanilla HTML/CSS/JS (no framework)
-- AI: NVIDIA NIM API (OpenAI-compatible) via SSE streaming
-- Model: meta/llama-3.3-70b-instruct
+- Backend: Node.js + Express (`server/index.js` exports the app; it only listens when run directly)
+- Frontend: React 19 + Vite + Tailwind (`frontend/`), PDF rendering with react-pdf
+- LLM: OpenAI-compatible clients for OpenRouter and NVIDIA NIM, streamed over SSE
+- TTS: edge-tts, with a Web Speech API fallback in the browser
+- PPTX → PDF: LibreOffice (PowerPoint COM on Windows)
 
-## No Test/Lint
-- No test scripts in package.json
-- No lint/typecheck configured
+## Key files
+- `server/routes/` - upload, narrate, qa endpoints
+- `server/utils/llm.js` - prompts and `streamWithFallback` provider chain
+- `server/utils/answerParser.js` - streaming JSON answer parser
+- `server/utils/safeFilename.js` - upload filename sanitizing
+- `server/utils/parseSlides.js`, `convertSlides.js`, `tts.js`
 
-## Key Directories
-- `server/routes/` - API endpoints (upload, narrate, qa)
-- `server/utils/` - LLM, TTS, slide parsing/conversion
-- `client/` - Static frontend files
+## Conventions
+- Add a test in `test/` for any behavior change; tests must not call real APIs.
+- Pass fake providers to `streamWithFallback` / `streamNarration` / `streamAnswer` in tests.
